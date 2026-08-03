@@ -19,6 +19,7 @@ from typing import Optional
 from .agent import Agent
 from .broker import MessageBroker
 from .protocol import Message, MessageType
+from .shared_memory import SharedMemory
 
 
 class DebateOrchestrator:
@@ -674,10 +675,16 @@ class DebateOrchestrator:
                 print(f"   ⚠️ 通知 {agent_id} 失败: {e}")
 
     def _format_fullstack_plan(self, task: str, shared_memory) -> str:
-        """生成全栈方案文档（含前后端）"""
+        """生成全栈方案文档——从讨论中动态提取内容"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         stats = shared_memory.get_stats()
         data = shared_memory._load()
+
+        # 从讨论中提取各类内容
+        api_design = self._extract_api_design()
+        data_model = self._extract_data_model()
+        implementation = self._extract_implementation()
+        frontend_details = self._extract_frontend_details()
 
         content = f"""# {task} - 技术方案
 
@@ -701,154 +708,124 @@ class DebateOrchestrator:
         decision_num = 0
         for entry in data.get("agreed_points", []):
             point = entry.get("point", "")
-            # 去重和过滤
             clean = point.replace("**", "").replace("✅", "").strip()
             if clean in seen_points or len(clean) < 10:
                 continue
-            # 只保留包含技术关键词的决策
-            tech_keywords = ["接口", "API", "数据库", "表", "字段", "WebSocket", "WS", "SSE", "Redis",
-                           "MySQL", "分页", "游标", "已读", "撤回", "消息", "会话", "群聊",
-                           "存储", "推送", "心跳", "在线", "seq", "ID", "JSON", "REST",
-                           "架构", "方案", "设计", "实现", "优化", "缓存", "索引"]
-            if any(kw in clean for kw in tech_keywords):
-                seen_points.add(clean)
-                decision_num += 1
-                by = f" [{entry.get('agreed_by', '')}]" if entry.get('agreed_by') else ""
-                content += f"{decision_num}. {clean}{by}\n"
+            seen_points.add(clean)
+            decision_num += 1
+            by = f" [{entry.get('agreed_by', '')}]" if entry.get('agreed_by') else ""
+            content += f"{decision_num}. {clean}{by}\n"
 
         content += f"""
 ## 3. 接口契约
 
-基于讨论达成的 API 设计：
-
-### 3.1 消息接口
-
-| 方法 | 路径 | 说明 | 请求体 | 响应 |
-|------|------|------|--------|------|
-| POST | /api/messages | 发送消息 | {{conversation_id, content, msg_type, client_msg_id}} | {{message_id, seq, created_at}} |
-| GET | /api/messages | 历史消息 | conversation_id, cursor, limit | {{messages[], next_cursor, has_more}} |
-| POST | /api/messages/{{id}}/recall | 撤回消息 | - | {{recalled: true}} |
-
-### 3.2 会话接口
-
-| 方法 | 路径 | 说明 | 请求体 | 响应 |
-|------|------|------|--------|------|
-| POST | /api/conversations/{{id}}/read | 标记已读 | {{last_read_msg_id}} | {{server_time}} |
-| GET | /api/conversations/{{id}}/members | 成员列表 | - | {{members[]}} |
-| GET | /api/conversations | 会话列表 | - | {{conversations[]}} |
-
-### 3.3 WebSocket 事件
-
-| 事件类型 | 方向 | 说明 | Payload |
-|----------|------|------|---------|
-| message_new | 服务端→客户端 | 新消息 | {{message_id, conversation_id, sender_id, content, seq, created_at}} |
-| message_recalled | 服务端→客户端 | 消息撤回 | {{message_id, conversation_id, sender_id}} |
-| read_ack | 服务端→客户端 | 已读回执 | {{conversation_id, user_id, last_read_msg_id, updated_at}} |
-| member_update | 服务端→客户端 | 成员变更 | {{conversation_id, user_id, type}} |
-| online_status | 服务端→客户端 | 在线状态 | {{user_id, is_online, last_seen}} |
-| typing | 双向 | 输入中 | {{conversation_id, user_id, is_typing}} |
+{api_design if api_design else '（讨论中未明确 API 设计，请根据核心决策补充）'}
 
 ## 4. 数据模型
 
-### 4.1 消息表 (messages)
-
-```sql
-CREATE TABLE messages (
-    id BIGINT PRIMARY KEY,              -- 雪花ID，全局唯一
-    conversation_id VARCHAR(64) NOT NULL,
-    sender_id INTEGER NOT NULL,
-    content TEXT NOT NULL,
-    msg_type VARCHAR(16) DEFAULT 'text', -- text/image/file
-    seq INTEGER NOT NULL,                -- 会话内局部递增
-    is_recalled INTEGER DEFAULT 0,       -- 0=正常 1=已召回
-    created_at REAL NOT NULL,
-    UNIQUE(conversation_id, seq)
-);
-CREATE INDEX idx_msg_conv_seq ON messages(conversation_id, seq);
-CREATE INDEX idx_msg_created ON messages(created_at);
-```
-
-### 4.2 会话已读表 (conversation_read)
-
-```sql
-CREATE TABLE conversation_read (
-    conversation_id VARCHAR(64) NOT NULL,
-    user_id INTEGER NOT NULL,
-    last_read_msg_id BIGINT NOT NULL,
-    last_read_seq INTEGER NOT NULL,
-    updated_at REAL NOT NULL,
-    PRIMARY KEY (conversation_id, user_id)
-);
-```
-
-### 4.3 会话成员表 (conversation_members)
-
-```sql
-CREATE TABLE conversation_members (
-    conversation_id VARCHAR(64) NOT NULL,
-    user_id INTEGER NOT NULL,
-    role VARCHAR(16) DEFAULT 'member',  -- owner/admin/member
-    joined_at REAL NOT NULL,
-    PRIMARY KEY (conversation_id, user_id)
-);
-```
-
-### 4.4 会话表 (conversations)
-
-```sql
-CREATE TABLE conversations (
-    id VARCHAR(64) PRIMARY KEY,
-    type VARCHAR(16) DEFAULT 'single',  -- single/group
-    created_by INTEGER NOT NULL,
-    created_at REAL NOT NULL
-);
-```
+{data_model if data_model else '（讨论中未明确数据模型，请根据核心决策补充）'}
 
 ## 5. 关键实现细节
 
-### 5.1 消息发送流程
-1. 客户端发送消息到 POST /api/messages
-2. 服务端在事务内：分配 seq（SELECT MAX(seq)+1 WHERE conversation_id=?）+ 插入消息
-3. 发送成功后通过 WebSocket 广播 message_new 事件给会话内所有在线成员
-4. 异步更新 Redis 未读数计数
+{implementation if implementation else '（讨论中未明确实现细节，请根据核心决策补充）'}
 
-### 5.2 已读同步流程
-1. 客户端进入会话/滚动到底部时调 POST /api/conversations/{id}/read
-2. 服务端用 INSERT ... ON CONFLICT DO UPDATE SET last_read_msg_id=MAX(...) 保证单调不减
-3. 通过 WebSocket 广播 read_ack 事件
-4. 异步扣减 Redis 未读数
+## 6. 前端实现
 
-### 5.3 消息撤回流程
-1. 客户端调 POST /api/messages/{id}/recall
-2. 服务端校验：发送者本人 + 2分钟内
-3. 更新 is_recalled=1，不物理删除
-4. 通过 WebSocket 广播 message_recalled 事件
+{frontend_details if frontend_details else '（讨论中未明确前端实现，请根据接口契约补充）'}
 
-### 5.4 在线状态
-1. 客户端每 30s 发送心跳 POST /api/users/heartbeat
-2. 服务端更新 last_seen，超过 90s 判定离线
-3. 通过 WebSocket 广播 online_status 事件
+## 7. 实施步骤
 
-### 5.5 分页查询
-1. 使用游标分页：GET /api/messages?conversation_id=X&cursor=created_at:id&limit=20
-2. 服务端按 (created_at, id) < 复合条件查询
-3. 返回 messages, next_cursor, has_more
-
-## 6. 实施步骤
-
-1. **数据库迁移**：创建上述 4 张表 + 索引
-2. **消息模块**：实现发送、撤回、分页查询
-3. **已读模块**：实现会话级已读标记 + 未读数 Redis 缓存
-4. **WebSocket 模块**：实现连接管理 + 6 类事件推送
-5. **在线状态模块**：实现心跳 + 超时判定
-6. **测试**：单元测试 + 集成测试
+1. **数据库迁移**：根据数据模型创建表 + 索引
+2. **接口实现**：根据接口契约实现 API
+3. **核心逻辑**：实现关键业务逻辑
+4. **前端对接**：根据接口契约对接前端
+5. **测试**：单元测试 + 集成测试
 
 ---
 
-*本文档由 MACF 自动生成。*
+*本文档由 MACF 自动生成。详细讨论记录见 debate_log.json。*
 """
 
         return content
+
+    def _extract_api_design(self) -> str:
+        """从讨论中提取 API 设计"""
+        api_lines = []
+        for msg in self.debate_log:
+            content = msg.payload.get("content", "")
+            if any(kw in content for kw in ["GET ", "POST ", "PUT ", "DELETE ", "PATCH ", "/api/"]):
+                for line in content.split("\n"):
+                    line = line.strip()
+                    if any(kw in line for kw in ["GET ", "POST ", "PUT ", "DELETE ", "PATCH ", "/api/", "201", "200", "204", "400", "404", "409"]):
+                        if line and line not in api_lines:
+                            api_lines.append(line)
+
+        if not api_lines:
+            return ""
+
+        result = "### API 接口列表\n\n"
+        for line in api_lines[:20]:
+            result += f"- {line}\n"
+        return result
+
+    def _extract_data_model(self) -> str:
+        """从讨论中提取数据模型"""
+        model_lines = []
+        for msg in self.debate_log:
+            content = msg.payload.get("content", "")
+            if any(kw in content for kw in ["CREATE TABLE", "VARCHAR", "INTEGER", "BIGINT", "PRIMARY KEY"]):
+                for line in content.split("\n"):
+                    line = line.strip()
+                    if any(kw in line for kw in ["CREATE TABLE", "VARCHAR", "INTEGER", "BIGINT", "PRIMARY KEY", "NOT NULL", "DEFAULT"]):
+                        if line and line not in model_lines:
+                            model_lines.append(line)
+
+        if not model_lines:
+            return ""
+
+        result = "### 数据库表结构\n\n```sql\n"
+        for line in model_lines[:30]:
+            result += f"{line}\n"
+        result += "```\n"
+        return result
+
+    def _extract_implementation(self) -> str:
+        """从讨论中提取实现细节"""
+        impl_lines = []
+        for msg in self.debate_log:
+            content = msg.payload.get("content", "")
+            if any(kw in content for kw in ["流程", "步骤", "实现", "逻辑", "校验", "验证"]):
+                for line in content.split("\n"):
+                    line = line.strip()
+                    if line and len(line) > 10 and line not in impl_lines:
+                        impl_lines.append(line)
+
+        if not impl_lines:
+            return ""
+
+        result = "### 核心流程\n\n"
+        for i, line in enumerate(impl_lines[:15], 1):
+            result += f"{i}. {line}\n"
+        return result
+
+    def _extract_frontend_details(self) -> str:
+        """从讨论中提取前端实现细节"""
+        frontend_lines = []
+        for msg in self.debate_log:
+            content = msg.payload.get("content", "")
+            if any(kw in content for kw in ["前端", "组件", "表单", "页面", "UI", "交互"]):
+                for line in content.split("\n"):
+                    line = line.strip()
+                    if line and len(line) > 10 and line not in frontend_lines:
+                        frontend_lines.append(line)
+
+        if not frontend_lines:
+            return ""
+
+        result = "### 前端实现要点\n\n"
+        for line in frontend_lines[:15]:
+            result += f"- {line}\n"
+        return result
 
     def _format_backend_plan(self, task: str, shared_memory) -> str:
         """生成纯后端方案文档"""
