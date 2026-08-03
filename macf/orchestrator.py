@@ -45,6 +45,9 @@ class DebateOrchestrator:
 
         # 共识追踪——记录哪些 Agent 已同意（需全部同意才算共识）
         self._approved_by = []
+
+        # 故障追踪——记录故障 Agent（故障 Agent 不参与共识判断）
+        self._failed_agents = set()
         self._consensus_file = "./workspace/consensus.json"
 
         # 初始化消息代理
@@ -91,12 +94,18 @@ class DebateOrchestrator:
         self.broker.start_listener()
 
     def _monitor_handler(self, message: Message):
-        """监控所有消息，追踪共识"""
+        """监控所有消息，追踪共识，检测故障"""
         self.debate_log.append(message)
+
+        # 检测 Agent 故障——发送错误消息视为故障
+        content = message.payload.get("content", "")
+        if self._is_error_message(message):
+            if message.from_agent not in self._failed_agents:
+                self._failed_agents.add(message.from_agent)
+                print(f"   ⚠️ Agent [{message.from_agent}] 被标记为故障")
 
         # 提取共识点（从 approval 和 revision 消息中）
         if message.type in (MessageType.APPROVAL, MessageType.REVISION):
-            content = message.payload.get("content", "")
             # 提取关键共识（简单启发式：包含"同意""确认""接受"的句子）
             for kw in ["同意", "确认", "接受", "认可", "没问题", "可以实施", "达成共识"]:
                 if kw in content:
@@ -108,7 +117,7 @@ class DebateOrchestrator:
                                 self.agreed_points.append(point)
                                 print(f"   📌 新共识: {point[:50]}...")
 
-        # 检查是否达成共识——需要所有 Agent 都同意
+        # 检查是否达成共识——支持故障隔离
         if len(self.debate_log) >= 3 and message.type == MessageType.APPROVAL:
             content = message.payload.get("content", "")
             if any(kw in content for kw in self.consensus_keywords):
@@ -117,14 +126,40 @@ class DebateOrchestrator:
                     self._approved_by.append(message.from_agent)
                     print(f"   ✅ Agent [{message.from_agent}] 表示同意")
 
-                # 检查是否所有 Agent 都已同意
+                # 检查共识——正常情况需所有 Agent 同意
                 all_agents = set(self.agents.keys())
-                if set(self._approved_by) >= all_agents:
-                    print(f"\n🎉 达成共识! 所有 Agent 均已同意: {self._approved_by}")
+                active_agents = all_agents - self._failed_agents
+
+                # 如果活跃 Agent 都已同意，达成共识
+                if active_agents and set(self._approved_by) >= active_agents:
+                    if self._failed_agents:
+                        print(f"\n🎉 达成共识! 活跃 Agent 均已同意: {self._approved_by} (故障: {self._failed_agents})")
+                    else:
+                        print(f"\n🎉 达成共识! 所有 Agent 均已同意: {self._approved_by}")
                     self.consensus_reached = True
 
         # 保存共识到文件（供 Agent 读取）
         self._save_consensus()
+
+    def _is_error_message(self, message: Message) -> bool:
+        """判断是否为错误消息（Agent 故障）"""
+        # 协调器自己发的消息不算
+        if message.from_agent == "orchestrator":
+            return False
+
+        content = message.payload.get("content", "")
+
+        # 检测 API 错误特征
+        error_indicators = [
+            "Error code:",
+            "Insufficient Balance",
+            "技术问题",
+            "Request timed out",
+            "Connection error",
+            "API 调用失败",
+        ]
+
+        return any(indicator in content for indicator in error_indicators)
 
     def _save_consensus(self):
         """保存共识点到文件"""
