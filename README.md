@@ -9,6 +9,18 @@
 
 [English](#english) | [中文](#中文)
 
+### 📚 文档
+
+| 文档 | 说明 |
+|------|------|
+| [架构设计](docs/architecture.md) | 系统架构、数据流、状态机 |
+| [API 参考](docs/api.md) | 完整 API 接口文档 |
+| [使用指南](docs/guide.md) | 快速开始、配置详解、常见问题 |
+| [完整演示](docs/demo.md) | 从零开始的完整演示案例 |
+| [路线图](ROADMAP.md) | 版本规划与未来方向 |
+| [CHANGELOG](CHANGELOG.md) | 版本变更记录 |
+| [License](LICENSE) | MIT License |
+
 ---
 
 ## 中文
