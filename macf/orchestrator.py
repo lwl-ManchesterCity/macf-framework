@@ -281,6 +281,10 @@ class DebateOrchestrator:
                 self._next_speaker()
 
                 print(f"   📢 Round {self._current_round}: [{self._current_speaker}] 发言 ({elapsed}s)")
+
+                # 每 3 轮生成讨论摘要，减少上下文丢失
+                if self._current_round % 3 == 0 and self._current_round > 0:
+                    self._generate_discussion_summary()
             else:
                 # 本轮无新消息，检查是否超时
                 turn_elapsed = time.time() - turn_start_time
@@ -312,6 +316,29 @@ class DebateOrchestrator:
         current_idx = self._turn_order.index(self._current_speaker) if self._current_speaker in self._turn_order else 0
         next_idx = (current_idx + 1) % len(self._turn_order)
         self._current_speaker = self._turn_order[next_idx]
+
+    def _generate_discussion_summary(self):
+        """生成讨论摘要，写入共享记忆，减少上下文丢失"""
+        # 统计当前讨论状态
+        proposals = [m for m in self.debate_log if m.type == MessageType.PROPOSAL]
+        critiques = [m for m in self.debate_log if m.type == MessageType.CRITIQUE]
+        revisions = [m for m in self.debate_log if m.type == MessageType.REVISION]
+
+        summary = f"📋 讨论摘要 (Round {self._current_round}):\n"
+        summary += f"- 方案提议: {len(proposals)} 次\n"
+        summary += f"- 评审反馈: {len(critiques)} 次\n"
+        summary += f"- 方案修订: {len(revisions)} 次\n"
+        summary += f"- 已达成共识: {len(self.agreed_points)} 个\n"
+
+        if self.agreed_points:
+            summary += "\n已确认的关键决策:\n"
+            for i, point in enumerate(self.agreed_points[-5:], 1):  # 最近 5 个
+                summary += f"  {i}. {point[:60]}...\n"
+
+        # 写入共享记忆
+        self.shared_memory.add_agreed_point(f"[讨论摘要 Round {self._current_round}] 已确认 {len(self.agreed_points)} 个共识点")
+
+        print(f"\n{summary}")
 
             # 强制收敛：超过 max_turns 轮后自动结束
             if current_count >= self.max_turns * 3:
