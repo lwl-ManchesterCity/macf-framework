@@ -48,6 +48,9 @@ class DebateOrchestrator:
 
         # 故障追踪——记录故障 Agent（故障 Agent 不参与共识判断）
         self._failed_agents = set()
+
+        # 共享记忆实例（协调器自己也需要读写）
+        self.shared_memory = SharedMemory()
         self._consensus_file = "./workspace/consensus.json"
 
         # 初始化消息代理
@@ -339,20 +342,6 @@ class DebateOrchestrator:
         self.shared_memory.add_agreed_point(f"[讨论摘要 Round {self._current_round}] 已确认 {len(self.agreed_points)} 个共识点")
 
         print(f"\n{summary}")
-
-            # 强制收敛：超过 max_turns 轮后自动结束
-            if current_count >= self.max_turns * 3:
-                print(f"\n⚠️ 已达到最大讨论轮次 ({self.max_turns * 3})，强制结束")
-                self.consensus_reached = True
-                break
-
-            if self.consensus_reached:
-                # 共识后多等几秒确保消息完整
-                time.sleep(3)
-                print("\n✅ Debate 完成 - 已达成共识!")
-                return
-
-        print(f"\n⏰ Debate 结束（共 {len(self.debate_log)} 条消息）")
 
     def _push_convergence(self):
         """发送收敛推动消息，让 Agent 知道该收尾了"""
