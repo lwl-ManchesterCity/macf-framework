@@ -147,7 +147,7 @@ class DebateOrchestrator:
 
     def run_debate(self, task: str, starter: str = "agent-a", responder: str = "agent-b"):
         """
-        启动 Debate 流程
+        启动 Debate 流程（带轮次管理）
 
         Args:
             task: 任务描述
@@ -155,21 +155,26 @@ class DebateOrchestrator:
             responder: 回应/审查的 Agent ID
         """
         print(f"\n{'='*60}")
-        print(f"🎬 Debate 开始")
+        print(f"🎬 Debate 开始 (轮次管理模式)")
         print(f"   任务: {task}")
-        print(f"   发起者: {starter}")
-        print(f"   审查者: {responder}")
+        print(f"   Agents: {list(self.agents.keys())}")
+        print(f"   最大轮次: {self.max_turns}")
         print(f"{'='*60}\n")
 
         # 获取 scope（从配置读取，默认 fullstack）
         scope = self.config.get("task", {}).get("scope", "fullstack")
 
-        # 启动发起者
+        # 初始化轮次状态
+        self._current_round = 0
+        self._current_speaker = starter
+        self._turn_order = list(self.agents.keys())  # 轮次顺序
+
+        # 启动发起者（第一轮）
         starter_agent = self.agents[starter]
         starter_agent.start_task(task, to_agent=responder)
 
-        # 等待 Debate 完成
-        self._wait_for_completion()
+        # 等待 Debate 完成（带轮次管理）
+        self._wait_for_completion_turn_based()
 
         # 生成最终方案（根据 scope 决定内容）
         self._generate_final_plan(task, scope=scope)
@@ -206,6 +211,72 @@ class DebateOrchestrator:
                     print("\n⚠️ 推动后仍无响应，强制结束")
                     self.consensus_reached = True
                     break
+
+            if self.consensus_reached:
+                # 共识后多等几秒确保消息完整
+                time.sleep(3)
+                print("\n✅ Debate 完成 - 已达成共识!")
+                return
+
+        print(f"\n⏰ Debate 结束（共 {len(self.debate_log)} 条消息）")
+
+    def _wait_for_completion_turn_based(self, timeout: int = 600):
+        """轮次管理模式——每轮只有一个 Agent 发言，有序进行"""
+        print(f"⏳ 等待 Debate 完成 (轮次模式, 超时: {timeout}s)...\n")
+
+        start_time = time.time()
+        turn_timeout = 90  # 每轮超时 90 秒
+        turn_start_time = time.time()
+        turn_message_count = len(self.debate_log)
+
+        while time.time() - start_time < timeout:
+            time.sleep(2)
+
+            current_count = len(self.debate_log)
+            elapsed = int(time.time() - start_time)
+
+            # 检测是否有新消息
+            if current_count > turn_message_count:
+                # 本轮有新消息，进入下一轮
+                self._current_round += 1
+                turn_start_time = time.time()
+                turn_message_count = current_count
+
+                # 切换发言者
+                self._next_speaker()
+
+                print(f"   📢 Round {self._current_round}: [{self._current_speaker}] 发言 ({elapsed}s)")
+            else:
+                # 本轮无新消息，检查是否超时
+                turn_elapsed = time.time() - turn_start_time
+                if turn_elapsed > turn_timeout:
+                    print(f"   ⏰ Round {self._current_round + 1} 超时，跳过 [{self._current_speaker}]")
+                    self._current_round += 1
+                    turn_start_time = time.time()
+                    turn_message_count = current_count
+                    self._next_speaker()
+
+            # 检查是否达到最大轮次
+            if self._current_round >= self.max_turns:
+                print(f"\n⚠️ 已达到最大轮次 ({self.max_turns})，强制结束")
+                self.consensus_reached = True
+                break
+
+            # 检查是否达成共识
+            if self.consensus_reached:
+                time.sleep(3)
+                print(f"\n✅ Debate 完成 - 已达成共识! (共 {self._current_round} 轮)")
+                return
+
+        print(f"\n⏰ Debate 结束（共 {self._current_round} 轮, {len(self.debate_log)} 条消息）")
+
+    def _next_speaker(self):
+        """切换到下一个发言者"""
+        if not self._turn_order:
+            return
+        current_idx = self._turn_order.index(self._current_speaker) if self._current_speaker in self._turn_order else 0
+        next_idx = (current_idx + 1) % len(self._turn_order)
+        self._current_speaker = self._turn_order[next_idx]
 
             # 强制收敛：超过 max_turns 轮后自动结束
             if current_count >= self.max_turns * 3:
