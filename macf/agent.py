@@ -353,38 +353,52 @@ class Agent:
             return ""
 
     def _extract_and_save_consensus(self, message: Message):
-        """从消息中提取共识点并保存到共享记忆"""
+        """从消息中提取共识点并保存到共享记忆（过滤噪声，只保留技术决策）"""
         content = message.payload.get("content", "")
         msg_type = message.type
 
+        # 过滤掉非技术内容（噪声过滤）
+        noise_indicators = [
+            "讨论摘要", "已确认", "共识点", "让我先读取",
+            "我需要先", "让我分析", "看起来", "用户要求我",
+            "Let me", "I need to", "I'm agent", "agent-a", "agent-b",
+        ]
+        if any(noise in content for noise in noise_indicators):
+            # 跳过纯摘要/元讨论消息，但可能包含技术内容的混合消息除外
+            if not any(kw in content for kw in ["POST ", "GET ", "PUT ", "DELETE ", "/api/", "CREATE TABLE"]):
+                return
+
         # 从 approval 消息中提取共识
         if msg_type == MessageType.APPROVAL:
-            # 提取关键共识句（包含"同意""确认""接受"等关键词的句子）
             consensus_keywords = ["同意", "确认", "接受", "认可", "没问题", "可以实施", "达成共识", "✅"]
             for line in content.split("\n"):
                 line = line.strip()
-                if not line or len(line) < 5:
+                # 过滤太短或太长的行
+                if not line or len(line) < 8 or len(line) > 200:
+                    continue
+                # 过滤噪声行
+                if any(noise in line for noise in noise_indicators):
                     continue
                 for kw in consensus_keywords:
                     if kw in line:
-                        # 清理格式标记
                         clean = line.replace("**", "").replace("✅", "").replace("-", "").strip()
-                        if clean and len(clean) > 5:
+                        if clean and len(clean) > 8:
                             self.shared_memory.add_agreed_point(clean, message.from_agent)
                         break
 
         # 从 revision 消息中提取修正后的共识
         elif msg_type == MessageType.REVISION:
-            # 提取"确认""调整为"等修正后的共识
             revision_keywords = ["确认", "调整为", "修改为", "改为", "接受", "采纳"]
             for line in content.split("\n"):
                 line = line.strip()
-                if not line or len(line) < 5:
+                if not line or len(line) < 8 or len(line) > 200:
+                    continue
+                if any(noise in line for noise in noise_indicators):
                     continue
                 for kw in revision_keywords:
                     if kw in line:
                         clean = line.replace("**", "").replace("✅", "").replace("-", "").strip()
-                        if clean and len(clean) > 5:
+                        if clean and len(clean) > 8:
                             self.shared_memory.add_agreed_point(clean, message.from_agent)
                         break
 

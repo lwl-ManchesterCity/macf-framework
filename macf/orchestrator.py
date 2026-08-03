@@ -703,13 +703,17 @@ class DebateOrchestrator:
 
 """
 
-        # 从共识点中提取去重的设计决策
+        # 从共识点中提取去重的设计决策（过滤噪声）
+        noise_indicators = ["讨论摘要", "已确认", "共识点", "让我先读取", "我需要先"]
         seen_points = set()
         decision_num = 0
         for entry in data.get("agreed_points", []):
             point = entry.get("point", "")
             clean = point.replace("**", "").replace("✅", "").strip()
+            # 过滤重复、太短、噪声
             if clean in seen_points or len(clean) < 10:
+                continue
+            if any(noise in clean for noise in noise_indicators):
                 continue
             seen_points.add(clean)
             decision_num += 1
