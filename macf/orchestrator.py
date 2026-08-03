@@ -265,6 +265,14 @@ class DebateOrchestrator:
         shared_memory = SharedMemory()
         stats = shared_memory.get_stats()
 
+        # 讨论质量校验——讨论不充分时给出警告
+        quality_issues = self._check_discussion_quality(stats)
+        if quality_issues:
+            print("⚠️ 讨论质量不足:")
+            for issue in quality_issues:
+                print(f"   - {issue}")
+            print("   方案可能不完整，建议重新讨论或手动补充。\n")
+
         # 根据 scope 生成方案文档
         if scope == "backend":
             plan_content = self._format_backend_plan(task, shared_memory)
@@ -272,6 +280,14 @@ class DebateOrchestrator:
             plan_content = self._format_frontend_plan(task, shared_memory)
         else:  # fullstack
             plan_content = self._format_fullstack_plan(task, shared_memory)
+
+        # 方案内容校验
+        content_issues = self._check_plan_content(plan_content)
+        if content_issues:
+            print("⚠️ 方案内容不足:")
+            for issue in content_issues:
+                print(f"   - {issue}")
+            print()
 
         # 保存方案到桌面和项目
         desktop_path = os.path.expanduser("~/Desktop/macf-final-plan.md")
@@ -289,6 +305,55 @@ class DebateOrchestrator:
         print(f"   - 总消息数: {stats['message_count']}")
         print(f"   - 共识点: {stats['agreed_count']} 个")
         print(f"   - 争议点: {stats['disputed_count']} 个")
+
+    def _check_discussion_quality(self, stats: dict) -> list:
+        """检查讨论质量，返回问题列表"""
+        issues = []
+
+        # 检查消息数是否足够（至少 6 轮 = 每个 Agent 各 3 次）
+        if stats["message_count"] < 6:
+            issues.append(f"讨论轮次不足: 仅 {stats['message_count']} 条消息（建议 ≥ 6）")
+
+        # 检查共识点数量
+        if stats["agreed_count"] < 3:
+            issues.append(f"共识点不足: 仅 {stats['agreed_count']} 个（建议 ≥ 3）")
+
+        # 检查是否有实质性的 proposal/critique（不是默认消息）
+        real_proposals = [m for m in self.debate_log
+                         if m.type == MessageType.PROPOSAL
+                         and len(m.payload.get("content", "")) > 100]
+        if len(real_proposals) < 2:
+            issues.append(f"实质性方案不足: 仅 {len(real_proposals)} 个（建议 ≥ 2）")
+
+        # 检查是否有 API 错误消息
+        error_msgs = [m for m in self.debate_log
+                     if "Error code" in m.payload.get("content", "")
+                     or "技术问题" in m.payload.get("content", "")]
+        if error_msgs:
+            issues.append(f"检测到 {len(error_msgs)} 条错误消息，可能影响讨论质量")
+
+        return issues
+
+    def _check_plan_content(self, plan_content: str) -> list:
+        """检查方案内容是否充分，返回问题列表"""
+        issues = []
+
+        # 检查方案长度
+        if len(plan_content) < 1000:
+            issues.append(f"方案过短: 仅 {len(plan_content)} 字符（建议 ≥ 1000）")
+
+        # 检查是否包含关键章节
+        required_sections = ["接口契约", "数据模型", "实施步骤"]
+        for section in required_sections:
+            if section not in plan_content:
+                issues.append(f"缺少章节: {section}")
+
+        # 检查是否只是模板（没有实际内容）
+        placeholder_count = plan_content.count("（无") + plan_content.count("（待") + plan_content.count("详见")
+        if placeholder_count > 3:
+            issues.append(f"占位符过多: {placeholder_count} 个，实际内容不足")
+
+        return issues
         print(f"\n📋 方案预览:")
         print(f"{'─'*60}")
         lines = plan_content.split("\n")[:20]
