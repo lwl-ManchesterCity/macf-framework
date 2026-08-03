@@ -42,6 +42,9 @@ class DebateOrchestrator:
 
         # 共识追踪——记录已达成的共识点
         self.agreed_points = []
+
+        # 共识追踪——记录哪些 Agent 已同意（需全部同意才算共识）
+        self._approved_by = []
         self._consensus_file = "./workspace/consensus.json"
 
         # 初始化消息代理
@@ -105,12 +108,20 @@ class DebateOrchestrator:
                                 self.agreed_points.append(point)
                                 print(f"   📌 新共识: {point[:50]}...")
 
-        # 检查是否达成共识（至少交换 3 条消息后才允许共识）
+        # 检查是否达成共识——需要所有 Agent 都同意
         if len(self.debate_log) >= 3 and message.type == MessageType.APPROVAL:
             content = message.payload.get("content", "")
             if any(kw in content for kw in self.consensus_keywords):
-                print(f"\n🎉 达成共识! Agent [{message.from_agent}] 表示同意")
-                self.consensus_reached = True
+                # 记录该 Agent 已同意
+                if message.from_agent not in self._approved_by:
+                    self._approved_by.append(message.from_agent)
+                    print(f"   ✅ Agent [{message.from_agent}] 表示同意")
+
+                # 检查是否所有 Agent 都已同意
+                all_agents = set(self.agents.keys())
+                if set(self._approved_by) >= all_agents:
+                    print(f"\n🎉 达成共识! 所有 Agent 均已同意: {self._approved_by}")
+                    self.consensus_reached = True
 
         # 保存共识到文件（供 Agent 读取）
         self._save_consensus()
