@@ -1,33 +1,29 @@
-# MACF 配置文件 — 即时通讯消息系统设计
+# MACF 配置文件 — 任务管理 API 设计
 
 task:
-  name: "即时通讯消息系统设计"
-  scope: fullstack   # backend / frontend / fullstack
+  name: "任务管理 API 设计"
+  scope: fullstack
   description: |
-    设计并优化一个支持单聊 + 群聊的即时通讯消息模块。
+    设计并优化一个任务管理模块的 API。
 
     功能需求：
-    - 消息收发（文本/图片/文件）
-    - 消息已读/未读状态
-    - 历史消息分页加载
-    - 消息撤回（2 分钟内）
-    - 在线状态显示
+    - 任务 CRUD（创建、查询、更新、删除）
+    - 任务状态流转（pending → in_progress → completed）
+    - 分页查询任务列表
 
-    当前实现存在的问题（见 workspace/target/message_system.py）：
-    1. 消息存储简单（单表），未考虑群聊扩散
-    2. 已读状态实现方式有性能问题（逐条更新）
-    3. 缺少实时推送机制
-    4. 历史消息查询未优化（深翻页性能差）
-    5. 在线状态实现不准确
+    当前实现存在的问题（见 workspace/target/task_api.py）：
+    1. 接口不 RESTful（用 POST /create 而不是 POST /tasks）
+    2. 缺少输入验证（标题、状态值）
+    3. 删除接口用 GET 而不是 DELETE
+    4. 缺少分页和错误处理
+    5. 缺少状态流转约束
 
     请讨论：
-    1. 消息存储架构（按 conversation_id 分片 vs 按 message_id 分片）
-    2. 实时推送方案（WebSocket vs SSE vs 长轮询）
-    3. 已读状态的同步策略（逐条标记 vs 会话级标记）
-    4. 群聊消息的扩散方式（写扩散 vs 读扩散）
-    5. 历史消息分页优化（游标分页 vs OFFSET）
-    6. 在线状态的心跳与超时策略
-    7. 前后端分工与接口契约
+    1. RESTful 接口设计（URL、HTTP 方法、状态码）
+    2. 输入验证策略
+    3. 状态流转规则（pending → in_progress → completed）
+    4. 分页查询设计
+    5. 前后端分工与接口契约
 
     注意：只讨论出方案文档，不写代码。
 
@@ -40,23 +36,19 @@ models:
     api_key: ${DEEPSEEK_API_KEY}
     base_url: https://api.deepseek.com
     model: deepseek-chat
-  longcat:
-    api_key: ${LONGCAT_API_KEY}
-    base_url: https://api.longcat.chat/openai
-    model: LongCat-2.0
 
 agents:
   - id: agent-a
     name: "前端架构师"
     model: deepseek
-    role: "资深前端架构师，擅长 React/Vue、WebSocket、状态管理、前端性能优化。负责前端方案设计（消息列表渲染、实时推送接入、已读状态展示、在线状态 UI），并与后端工程师讨论接口契约。只负责讨论出方案，不修改代码。"
+    role: "资深前端架构师，擅长 React/Vue、TypeScript、前端工程化。负责前端方案设计（表单验证、接口调用、状态管理），并与后端工程师讨论接口契约。只负责讨论出方案，不修改代码。"
     workspace: ./workspace/agent-a
     tools: [read_file, list_files]
 
   - id: agent-b
     name: "后端工程师"
     model: deepseek
-    role: "资深后端工程师，擅长 Python/Go、WebSocket、消息队列、分布式系统、高并发。负责后端方案设计（消息存储架构、推送服务、已读同步、群聊扩散、在线状态），并与前端工程师讨论接口对接。只负责讨论出方案，不修改代码。"
+    role: "资深后端工程师，擅长 Python、数据库设计、RESTful API。负责后端方案设计（接口设计、数据模型、状态机），并与前端工程师讨论接口对接。只负责讨论出方案，不修改代码。"
     workspace: ./workspace/agent-b
     tools: [read_file, list_files]
 
