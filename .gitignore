@@ -1,0 +1,35 @@
+# 环境变量（含 API Key）
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+eggs/
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 运行时生成
+workspace/
+*.db
+*.sqlite3
+
+# macOS
+.DS_Store
+
+# 日志
+*.log
