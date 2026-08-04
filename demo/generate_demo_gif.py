@@ -7,10 +7,15 @@ MACF Demo GIF Generator
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.font_manager as fm
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 import numpy as np
 from PIL import Image
 import io
+
+# 设置中文字体
+plt.rcParams['font.sans-serif'] = ['PingFang SC', 'Heiti SC', 'Arial Unicode MS', 'DejaVu Sans']
+plt.rcParams['axes.unicode_minus'] = False
 
 
 def create_frame(title, agents_active, messages, consensus, step, total_steps):
@@ -43,7 +48,7 @@ def create_frame(title, agents_active, messages, consensus, step, total_steps):
     ax.add_patch(a_box)
     ax.text(2.75, 4.8, 'Agent A', fontsize=14, fontweight='bold',
             ha='center', va='center', color='white')
-    ax.text(2.75, 4.2, '前端架构师', fontsize=10,
+    ax.text(2.75, 4.2, 'Frontend Architect', fontsize=10,
             ha='center', va='center', color='#8b949e')
 
     # Agent B
@@ -53,7 +58,7 @@ def create_frame(title, agents_active, messages, consensus, step, total_steps):
     ax.add_patch(b_box)
     ax.text(9.25, 4.8, 'Agent B', fontsize=14, fontweight='bold',
             ha='center', va='center', color='white')
-    ax.text(9.25, 4.2, '后端工程师', fontsize=10,
+    ax.text(9.25, 4.2, 'Backend Engineer', fontsize=10,
             ha='center', va='center', color='#8b949e')
 
     # 消息箭头
@@ -70,12 +75,12 @@ def create_frame(title, agents_active, messages, consensus, step, total_steps):
 
     # 共识状态
     consensus_color = '#238636' if consensus else '#daa520'
-    consensus_text = '✅ 已达成共识' if consensus else '🔄 讨论中...'
+    consensus_text = 'Consensus Reached' if consensus else 'Debating...'
     ax.text(6, 1.5, consensus_text, fontsize=14, fontweight='bold',
             ha='center', va='center', color=consensus_color)
 
     # 消息计数
-    ax.text(6, 0.8, f'消息数: {len(messages)}', fontsize=10,
+    ax.text(6, 0.8, f'Messages: {len(messages)}', fontsize=10,
             ha='center', va='center', color='#8b949e')
 
     plt.tight_layout()
@@ -95,7 +100,7 @@ def generate_demo_gif(output_path: str = "demo/macf_demo.gif"):
 
     # 场景 1: 初始化
     frames.append(create_frame(
-        "🎯 Step 1: 配置任务",
+        "Step 1: Configure Task",
         agents_active=[False, False],
         messages=[],
         consensus=False,
@@ -104,7 +109,7 @@ def generate_demo_gif(output_path: str = "demo/macf_demo.gif"):
 
     # 场景 2: Agent A 开始
     frames.append(create_frame(
-        "🚀 Step 2: Agent A 开始分析",
+        "Step 2: Agent A Analyzes",
         agents_active=[True, False],
         messages=[],
         consensus=False,
@@ -113,7 +118,7 @@ def generate_demo_gif(output_path: str = "demo/macf_demo.gif"):
 
     # 场景 3: Agent A 提出方案
     frames.append(create_frame(
-        "📝 Step 3: Agent A 提出方案",
+        "Step 3: Agent A Proposes",
         agents_active=[False, True],
         messages=[{"from": "agent-a", "to": "agent-b", "type": "proposal"}],
         consensus=False,
@@ -122,7 +127,7 @@ def generate_demo_gif(output_path: str = "demo/macf_demo.gif"):
 
     # 场景 4: Agent B 评审
     frames.append(create_frame(
-        "🔍 Step 4: Agent B 评审反馈",
+        "Step 4: Agent B Reviews",
         agents_active=[True, False],
         messages=[
             {"from": "agent-a", "to": "agent-b", "type": "proposal"},
@@ -134,7 +139,7 @@ def generate_demo_gif(output_path: str = "demo/macf_demo.gif"):
 
     # 场景 5: 多轮讨论
     frames.append(create_frame(
-        "🔄 Step 5: 多轮讨论",
+        "Step 5: Multi-round Debate",
         agents_active=[True, True],
         messages=[
             {"from": "agent-a", "to": "agent-b", "type": "proposal"},
@@ -148,7 +153,7 @@ def generate_demo_gif(output_path: str = "demo/macf_demo.gif"):
 
     # 场景 6: 达成共识
     frames.append(create_frame(
-        "🎉 Step 6: 达成共识，生成方案",
+        "Step 6: Consensus Reached",
         agents_active=[False, False],
         messages=[
             {"from": "agent-a", "to": "agent-b", "type": "proposal"},
