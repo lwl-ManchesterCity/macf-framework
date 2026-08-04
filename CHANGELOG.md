@@ -4,6 +4,23 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [v0.3.0] - 2026-08-04
+
+### Added
+- **API Gateway**：FastAPI REST API 接口
+- **Docker 部署**：Dockerfile + docker-compose.yml
+- **Web UI**：实时监控辩论过程
+- **异步任务**：后台运行辩论，API 实时查询进度
+
+### API 端点
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | /api/debate/start | 启动辩论 |
+| GET | /api/debate/{id} | 查询状态 |
+| GET | /api/debate/{id}/messages | 消息流 |
+| GET | /api/debate/{id}/result | 获取结果 |
+| POST | /api/debate/{id}/stop | 停止辩论 |
+
 ## [v0.2.0] - 2026-08-03
 
 ### Added
@@ -14,11 +31,6 @@
 - 方案质量校验（讨论充分性 + 内容完整性检查）
 - 共识噪声过滤（过滤摘要消息和元讨论）
 - 方案内容动态提取（从讨论中提取 API/数据模型/实现细节）
-
-### Improved
-- LLM 工具调用稳定性（文本解析 fallback + 指数退避重试）
-- 共享记忆机制（自动追踪文件读取和共识点）
-- 方案文档结构化（按 scope 动态生成内容）
 
 ## [v0.1.0] - 2026-08-03
 
