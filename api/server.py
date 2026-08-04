@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 # 加载 .env 文件
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -37,6 +37,15 @@ app.add_middleware(
 debates: dict[str, "DebateTask"] = {}
 # 共享状态存储（用于线程间通信）
 shared_states: dict[str, dict] = {}
+# WebSocket 连接管理
+ws_connections: dict[str, list[WebSocket]] = {}
+# 全局统计
+global_stats = {
+    "total_debates": 0,
+    "total_messages": 0,
+    "total_tokens": 0,
+    "total_cost_rmb": 0.0,
+}
 
 
 # ==================== 数据模型 ====================
@@ -188,10 +197,77 @@ async def list_debates():
                 "status": t.status,
                 "task_name": t.config.task_name,
                 "created_at": t.created_at,
+                "message_count": len(t.messages),
             }
-            for t in debates.values()
+            for t in sorted(debates.values(), key=lambda x: x.created_at, reverse=True)
         ]
     }
+
+
+@app.get("/api/stats")
+async def get_stats():
+    """获取全局统计"""
+    return {
+        "global": global_stats,
+        "active_debates": len([t for t in debates.values() if t.status == "running"]),
+        "total_debates": len(debates),
+    }
+
+
+@app.websocket("/ws/debate/{debate_id}")
+async def websocket_endpoint(websocket: WebSocket, debate_id: str):
+    """WebSocket 实时推送辩论消息"""
+    await websocket.accept()
+
+    if debate_id not in debates:
+        await websocket.close(code=4004, reason="辩论不存在")
+        return
+
+    # 注册连接
+    if debate_id not in ws_connections:
+        ws_connections[debate_id] = []
+    ws_connections[debate_id].append(websocket)
+
+    try:
+        # 先发送历史消息
+        await websocket.send_json({
+            "type": "history",
+            "messages": debates[debate_id].messages,
+        })
+
+        # 等待新消息（通过轮询检查）
+        while True:
+            await asyncio.sleep(1)
+            # 检查辩论是否结束
+            if debates[debate_id].status in ("completed", "failed", "stopped"):
+                await websocket.send_json({
+                    "type": "status",
+                    "status": debates[debate_id].status,
+                })
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        # 清理连接
+        if debate_id in ws_connections:
+            ws_connections[debate_id].remove(websocket)
+
+
+async def broadcast_message(debate_id: str, message: dict):
+    """向所有 WebSocket 连接广播消息"""
+    if debate_id in ws_connections:
+        disconnected = []
+        for ws in ws_connections[debate_id]:
+            try:
+                await ws.send_json({
+                    "type": "message",
+                    "data": message,
+                })
+            except Exception:
+                disconnected.append(ws)
+        # 清理断开的连接
+        for ws in disconnected:
+            ws_connections[debate_id].remove(ws)
 
 
 # ==================== 后台任务 ====================
@@ -280,7 +356,19 @@ def run_debate_sync(debate_id: str, config: DebateConfig):
             with open(plan_path, "r", encoding="utf-8") as f:
                 task.result = f.read()
 
+        # 更新全局统计
+        global_stats["total_debates"] += 1
+        global_stats["total_messages"] += len(orchestrator.debate_log)
+        global_stats["total_tokens"] += getattr(orchestrator, "_total_tokens", 0)
+
         task.status = "completed" if orchestrator.consensus_reached else "completed_with_warnings"
+
+        # WebSocket 推送完成通知
+        asyncio.run(broadcast_message(debate_id, {
+            "type": "completed",
+            "status": task.status,
+            "message_count": len(task.messages),
+        }))
 
     except Exception as e:
         task.status = "failed"

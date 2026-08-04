@@ -161,7 +161,7 @@
     <script>
         const API_BASE = window.location.port === '8000' ? '' : 'http://localhost:8000';
         let currentDebateId = null;
-        let pollInterval = null;
+        let ws = null;
 
         async function startDebate() {
             const config = {
@@ -186,7 +186,8 @@
                 });
                 const data = await res.json();
                 currentDebateId = data.id;
-                startPolling();
+                updateStatus('running');
+                connectWebSocket(data.id);
             } catch (e) {
                 alert('启动失败: ' + e.message);
                 document.getElementById('startBtn').disabled = false;
@@ -194,42 +195,31 @@
             }
         }
 
-        function startPolling() {
-            if (pollInterval) clearInterval(pollInterval);
-            pollInterval = setInterval(pollStatus, 3000);
-        }
+        function connectWebSocket(debateId) {
+            const wsUrl = `ws://${API_BASE.replace('http://', '')}/ws/debate/${debateId}`;
+            ws = new WebSocket(wsUrl);
 
-        async function pollStatus() {
-            if (!currentDebateId) return;
+            ws.onopen = () => console.log('WebSocket 已连接');
 
-            try {
-                const res = await fetch(`${API_BASE}/api/debate/${currentDebateId}`);
-                const data = await res.json();
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
 
-                // 更新状态
-                updateStatus(data.status);
-                document.getElementById('msgCount').textContent = data.message_count || 0;
-                document.getElementById('consensusCount').textContent = data.stats?.agreed_points || 0;
-                document.getElementById('roundCount').textContent = Math.floor((data.message_count || 0) / 2);
-
-                // 更新消息
-                if (data.messages) {
+                if (data.type === 'history') {
                     updateMessages(data.messages);
-                }
-
-                // 检查是否完成
-                if (['completed', 'completed_with_warnings', 'failed', 'stopped'].includes(data.status)) {
-                    clearInterval(pollInterval);
+                } else if (data.type === 'message') {
+                    appendMessage(data.data);
+                } else if (data.type === 'status' || data.type === 'completed') {
+                    updateStatus(data.status || data.type);
                     document.getElementById('loading').classList.remove('active');
                     document.getElementById('startBtn').disabled = false;
-
-                    if (data.status === 'completed' || data.status === 'completed_with_warnings') {
+                    if (data.type === 'completed') {
                         loadResult();
                     }
                 }
-            } catch (e) {
-                console.error('Poll error:', e);
-            }
+            };
+
+            ws.onerror = (e) => console.error('WebSocket 错误:', e);
+            ws.onclose = () => console.log('WebSocket 已关闭');
         }
 
         function updateStatus(status) {
@@ -248,25 +238,37 @@
 
         function updateMessages(messages) {
             const container = document.getElementById('messages');
-            if (messages.length === 0) return;
-
-            container.innerHTML = messages.map(m => `
-                <div class="message ${m.from}">
-                    <div class="meta">
-                        <strong>${m.from}</strong> → ${m.to} | ${m.type} | ${new Date(m.timestamp).toLocaleTimeString()}
-                    </div>
-                    <div class="content">${m.content.substring(0, 200)}${m.content.length > 200 ? '...' : ''}</div>
-                </div>
-            `).reverse().join('');
-
+            if (!messages || messages.length === 0) return;
+            container.innerHTML = messages.map(m => messageHtml(m)).reverse().join('');
             container.scrollTop = container.scrollHeight;
+        }
+
+        function appendMessage(msg) {
+            const container = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.innerHTML = messageHtml(msg);
+            container.insertBefore(div, container.firstChild);
+            document.getElementById('msgCount').textContent = parseInt(document.getElementById('msgCount').textContent) + 1;
+        }
+
+        function messageHtml(m) {
+            return `<div class="message ${m.from}">
+                <div class="meta"><strong>${m.from}</strong> → ${m.to} | ${m.type} | ${new Date(m.timestamp).toLocaleTimeString()}</div>
+                <div class="content">${escapeHtml(m.content).substring(0, 200)}${m.content.length > 200 ? '...' : ''}</div>
+            </div>`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         async function loadResult() {
             try {
                 const res = await fetch(`${API_BASE}/api/debate/${currentDebateId}/result`);
                 const data = await res.json();
-                document.getElementById('result').innerHTML `<pre>${data.result}</pre>`;
+                document.getElementById('result').innerHTML = `<pre>${escapeHtml(data.result)}</pre>`;
             } catch (e) {
                 console.error('Load result error:', e);
             }
