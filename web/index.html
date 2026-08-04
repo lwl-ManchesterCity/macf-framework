@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MACF - Multi-Agent Collaboration Framework</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+        /* Header */
+        header { text-align: center; padding: 40px 0; border-bottom: 1px solid #21262d; }
+        header h1 { font-size: 2.5em; color: #58a6ff; margin-bottom: 10px; }
+        header p { color: #8b949e; font-size: 1.1em; }
+
+        /* Main */
+        .main { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 30px; }
+        @media (max-width: 768px) { .main { grid-template-columns: 1fr; } }
+
+        /* Card */
+        .card { background: #161b22; border: 1px solid #21262d; border-radius: 12px; padding: 24px; }
+        .card h2 { color: #58a6ff; margin-bottom: 16px; font-size: 1.3em; }
+
+        /* Form */
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 6px; color: #8b949e; font-size: 0.9em; }
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%; padding: 10px 14px; background: #0d1117; border: 1px solid #30363d;
+            border-radius: 8px; color: #c9d1d9; font-size: 0.95em;
+        }
+        .form-group textarea { min-height: 120px; resize: vertical; }
+        .form-group input:focus, .form-group textarea:focus { border-color: #58a6ff; outline: none; }
+
+        /* Button */
+        .btn { padding: 12px 24px; border: none; border-radius: 8px; font-size: 1em; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: #238636; color: white; }
+        .btn-primary:hover { background: #2ea043; }
+        .btn-primary:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+
+        /* Status */
+        .status { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.85em; }
+        .status-pending { background: #30363d; color: #8b949e; }
+        .status-running { background: #1f6feb33; color: #58a6ff; }
+        .status-completed { background: #23863633; color: #3fb950; }
+        .status-failed { background: #da363333; color: #f85149; }
+
+        /* Messages */
+        .messages { max-height: 400px; overflow-y: auto; }
+        .message { padding: 12px; margin-bottom: 10px; background: #0d1117; border-radius: 8px; border-left: 3px solid #58a6ff; }
+        .message.agent-a { border-left-color: #58a6ff; }
+        .message.agent-b { border-left-color: #a371f7; }
+        .message .meta { font-size: 0.8em; color: #8b949e; margin-bottom: 6px; }
+        .message .content { font-size: 0.9em; line-height: 1.5; }
+
+        /* Stats */
+        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+        .stat { text-align: center; padding: 12px; background: #0d1117; border-radius: 8px; }
+        .stat .value { font-size: 1.5em; color: #58a6ff; font-weight: bold; }
+        .stat .label { font-size: 0.8em; color: #8b949e; margin-top: 4px; }
+
+        /* Result */
+        .result { background: #0d1117; border-radius: 8px; padding: 20px; max-height: 500px; overflow-y: auto; }
+        .result pre { white-space: pre-wrap; font-size: 0.9em; line-height: 1.6; }
+
+        /* Loading */
+        .loading { display: none; text-align: center; padding: 20px; }
+        .loading.active { display: block; }
+        .spinner { width: 40px; height: 40px; border: 3px solid #21262d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 10px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 MACF</h1>
+            <p>Multi-Agent Collaboration Framework - 多智能体协作框架</p>
+        </header>
+
+        <div class="main">
+            <!-- 配置面板 -->
+            <div class="card">
+                <h2>⚙️ 配置辩论</h2>
+                <div class="form-group">
+                    <label>任务名称</label>
+                    <input type="text" id="taskName" value="任务管理 API 设计" placeholder="输入任务名称">
+                </div>
+                <div class="form-group">
+                    <label>范围</label>
+                    <select id="scope">
+                        <option value="fullstack">全栈 (fullstack)</option>
+                        <option value="backend">仅后端 (backend)</option>
+                        <option value="frontend">仅前端 (frontend)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>最大轮次</label>
+                    <input type="number" id="maxTurns" value="6" min="2" max="20">
+                </div>
+                <div class="form-group">
+                    <label>任务描述</label>
+                    <textarea id="description" placeholder="详细描述要讨论的内容...">设计并优化一个任务管理模块的 API。
+
+功能需求：
+- 任务 CRUD（创建、查询、更新、删除）
+- 任务状态流转（pending → in_progress → completed）
+- 分页查询任务列表
+
+当前实现存在的问题：
+1. 接口不 RESTful
+2. 缺少输入验证
+3. 缺少分页和错误处理</textarea>
+                </div>
+                <button class="btn btn-primary" id="startBtn" onclick="startDebate()">🚀 启动辩论</button>
+
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>辩论进行中...</p>
+                </div>
+            </div>
+
+            <!-- 监控面板 -->
+            <div class="card">
+                <h2>📊 实时监控</h2>
+                <div style="margin-bottom: 16px;">
+                    <span>状态: </span>
+                    <span class="status status-pending" id="statusBadge">等待中</span>
+                </div>
+
+                <div class="stats">
+                    <div class="stat">
+                        <div class="value" id="msgCount">0</div>
+                        <div class="label">消息数</div>
+                    </div>
+                    <div class="stat">
+                        <div class="value" id="consensusCount">0</div>
+                        <div class="label">共识点</div>
+                    </div>
+                    <div class="stat">
+                        <div class="value" id="roundCount">0</div>
+                        <div class="label">轮次</div>
+                    </div>
+                </div>
+
+                <h3 style="margin: 20px 0 12px; color: #8b949e; font-size: 1em;">消息流</h3>
+                <div class="messages" id="messages">
+                    <p style="color: #484f58; text-align: center; padding: 40px;">点击"启动辩论"开始...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 结果面板 -->
+        <div class="card" style="margin-top: 20px;">
+            <h2>📄 最终方案</h2>
+            <div class="result" id="result">
+                <p style="color: #484f58; text-align: center;">辩论结束后，方案将显示在这里...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.port === '8000' ? '' : 'http://localhost:8000';
+        let currentDebateId = null;
+        let pollInterval = null;
+
+        async function startDebate() {
+            const config = {
+                task_name: document.getElementById('taskName').value,
+                scope: document.getElementById('scope').value,
+                max_turns: parseInt(document.getElementById('maxTurns').value),
+                description: document.getElementById('description').value,
+                agents: [
+                    { id: 'agent-a', name: '前端架构师', model: 'deepseek', role: '资深前端架构师，负责前端方案设计', workspace: './workspace/agent-a', tools: ['read_file', 'list_files'] },
+                    { id: 'agent-b', name: '后端工程师', model: 'deepseek', role: '资深后端工程师，负责后端方案设计', workspace: './workspace/agent-b', tools: ['read_file', 'list_files'] },
+                ]
+            };
+
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('loading').classList.add('active');
+
+            try {
+                const res = await fetch(`${API_BASE}/api/debate/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config),
+                });
+                const data = await res.json();
+                currentDebateId = data.id;
+                startPolling();
+            } catch (e) {
+                alert('启动失败: ' + e.message);
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('loading').classList.remove('active');
+            }
+        }
+
+        function startPolling() {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(pollStatus, 3000);
+        }
+
+        async function pollStatus() {
+            if (!currentDebateId) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/api/debate/${currentDebateId}`);
+                const data = await res.json();
+
+                // 更新状态
+                updateStatus(data.status);
+                document.getElementById('msgCount').textContent = data.message_count || 0;
+                document.getElementById('consensusCount').textContent = data.stats?.agreed_points || 0;
+                document.getElementById('roundCount').textContent = Math.floor((data.message_count || 0) / 2);
+
+                // 更新消息
+                if (data.messages) {
+                    updateMessages(data.messages);
+                }
+
+                // 检查是否完成
+                if (['completed', 'completed_with_warnings', 'failed', 'stopped'].includes(data.status)) {
+                    clearInterval(pollInterval);
+                    document.getElementById('loading').classList.remove('active');
+                    document.getElementById('startBtn').disabled = false;
+
+                    if (data.status === 'completed' || data.status === 'completed_with_warnings') {
+                        loadResult();
+                    }
+                }
+            } catch (e) {
+                console.error('Poll error:', e);
+            }
+        }
+
+        function updateStatus(status) {
+            const badge = document.getElementById('statusBadge');
+            badge.className = 'status status-' + status;
+            const labels = {
+                pending: '等待中',
+                running: '辩论中',
+                completed: '已完成',
+                completed_with_warnings: '完成(有警告)',
+                failed: '失败',
+                stopped: '已停止',
+            };
+            badge.textContent = labels[status] || status;
+        }
+
+        function updateMessages(messages) {
+            const container = document.getElementById('messages');
+            if (messages.length === 0) return;
+
+            container.innerHTML = messages.map(m => `
+                <div class="message ${m.from}">
+                    <div class="meta">
+                        <strong>${m.from}</strong> → ${m.to} | ${m.type} | ${new Date(m.timestamp).toLocaleTimeString()}
+                    </div>
+                    <div class="content">${m.content.substring(0, 200)}${m.content.length > 200 ? '...' : ''}</div>
+                </div>
+            `).reverse().join('');
+
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function loadResult() {
+            try {
+                const res = await fetch(`${API_BASE}/api/debate/${currentDebateId}/result`);
+                const data = await res.json();
+                document.getElementById('result').innerHTML `<pre>${data.result}</pre>`;
+            } catch (e) {
+                console.error('Load result error:', e);
+            }
+        }
+    </script>
+</body>
+</html>

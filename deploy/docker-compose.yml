@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  # MACF API Gateway
+  macf-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+    depends_on:
+      - redis
+    volumes:
+      - ../workspace:/app/workspace
+    restart: unless-stopped
+
+  # Redis 消息总线
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:
