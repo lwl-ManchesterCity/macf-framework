@@ -35,6 +35,8 @@ app.add_middleware(
 
 # 内存存储（生产环境用 Redis/DB）
 debates: dict[str, "DebateTask"] = {}
+# 共享状态存储（用于线程间通信）
+shared_states: dict[str, dict] = {}
 
 
 # ==================== 数据模型 ====================
@@ -88,8 +90,10 @@ async def health():
 
 
 @app.post("/api/debate/start", response_model=DebateResponse)
-async def start_debate(config: DebateConfig, background_tasks: BackgroundTasks):
+async def start_debate(config: DebateConfig):
     """启动辩论任务"""
+    import threading
+
     debate_id = f"debate-{uuid.uuid4().hex[:8]}"
     now = datetime.now().isoformat()
 
@@ -102,8 +106,13 @@ async def start_debate(config: DebateConfig, background_tasks: BackgroundTasks):
     )
     debates[debate_id] = task
 
-    # 后台启动辩论
-    background_tasks.add_task(run_debate_task, debate_id, config)
+    # 在线程中启动辩论（避免阻塞事件循环）
+    thread = threading.Thread(
+        target=run_debate_sync,
+        args=(debate_id, config),
+        daemon=True,
+    )
+    thread.start()
 
     return DebateResponse(
         id=debate_id,
@@ -118,12 +127,17 @@ async def get_debate(debate_id: str):
     if debate_id not in debates:
         raise HTTPException(status_code=404, detail="辩论不存在")
     task = debates[debate_id]
+
+    # 消息已直接存储在 task 中
+    messages = task.messages
+    stats = task.stats
+
     return {
         "id": task.id,
         "status": task.status,
         "config": task.config.dict(),
-        "stats": task.stats,
-        "message_count": len(task.messages),
+        "stats": stats,
+        "message_count": len(messages),
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }
@@ -182,8 +196,8 @@ async def list_debates():
 
 # ==================== 后台任务 ====================
 
-async def run_debate_task(debate_id: str, config: DebateConfig):
-    """后台运行辩论"""
+def run_debate_sync(debate_id: str, config: DebateConfig):
+    """同步运行辩论（在线程中执行，避免阻塞事件循环）"""
     task = debates[debate_id]
     task.status = "running"
     task.updated_at = datetime.now().isoformat()
@@ -226,27 +240,30 @@ async def run_debate_task(debate_id: str, config: DebateConfig):
         # 创建协调器
         orchestrator = DebateOrchestrator(yaml_config)
 
-        # 注册消息监控
-        original_monitor = orchestrator._monitor_handler
-
+        # 注册消息监控——直接更新 task 对象
         def monitor_with_capture(msg: Message):
-            original_monitor(msg)
-            # 捕获消息到 API
-            task.messages.append({
+            # 捕获消息到 task
+            msg_data = {
                 "id": msg.id,
                 "from": msg.from_agent,
                 "to": msg.to_agent,
                 "type": msg.type.value,
                 "content": msg.payload.get("content", "")[:500],
                 "timestamp": msg.timestamp,
-            })
+            }
+            task.messages.append(msg_data)
             task.stats = {
                 "total_messages": len(orchestrator.debate_log),
                 "agreed_points": len(orchestrator.agreed_points),
                 "consensus_reached": orchestrator.consensus_reached,
+                "round": getattr(orchestrator, "_current_round", 0),
             }
 
         orchestrator._monitor_handler = monitor_with_capture
+
+        # 重新订阅 handler（__init__ 里已订阅原始 handler，需更新为新的）
+        for agent_id in orchestrator.agents:
+            orchestrator.broker.subscribe(agent_id, monitor_with_capture)
 
         # 运行辩论
         orchestrator.run_debate(
@@ -254,6 +271,8 @@ async def run_debate_task(debate_id: str, config: DebateConfig):
             starter=config.agents[0]["id"],
             responder=config.agents[1]["id"] if len(config.agents) > 1 else config.agents[0]["id"],
         )
+
+        # 消息已在监控中直接更新到 task，无需额外同步
 
         # 读取结果
         plan_path = "./workspace/final_plan.md"
