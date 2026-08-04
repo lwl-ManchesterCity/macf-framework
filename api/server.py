@@ -1,7 +1,7 @@
 """
 MACF API Gateway - REST API 接口
 
-提供辩论任务的启动、监控、停止和结果获取。
+提供辩论任务的启动、监控、停止、结果获取和自动化执行。
 """
 
 import asyncio
@@ -63,13 +63,16 @@ class DebateTask(BaseModel):
     """辩论任务"""
     id: str
     config: DebateConfig
-    status: str = "pending"  # pending/running/completed/failed
+    status: str = "pending"  # pending/running/completed/executed/failed
     created_at: str
     updated_at: str
     messages: list[dict] = []
     result: Optional[str] = None
     error: Optional[str] = None
+    error_detail: Optional[str] = None
     stats: dict = {}
+    execution_result: Optional[dict] = None
+    execution_error: Optional[str] = None
 
 
 class DebateResponse(BaseModel):
@@ -175,6 +178,20 @@ async def get_result(debate_id: str):
     }
 
 
+@app.get("/api/debate/{debate_id}/execution")
+async def get_execution(debate_id: str):
+    """获取执行结果"""
+    if debate_id not in debates:
+        raise HTTPException(status_code=404, detail="辩论不存在")
+    task = debates[debate_id]
+    return {
+        "id": debate_id,
+        "status": task.status,
+        "execution_result": task.execution_result,
+        "execution_error": task.execution_error,
+    }
+
+
 @app.post("/api/debate/{debate_id}/stop")
 async def stop_debate(debate_id: str):
     """停止辩论"""
@@ -212,6 +229,22 @@ async def get_stats():
         "active_debates": len([t for t in debates.values() if t.status == "running"]),
         "total_debates": len(debates),
     }
+
+
+@app.post("/api/debate/{debate_id}/execute")
+async def execute_plan(debate_id: str):
+    """自动执行方案——生成代码"""
+    if debate_id not in debates:
+        raise HTTPException(status_code=404, detail="辩论不存在")
+    task = debates[debate_id]
+    if task.status not in ("completed", "completed_with_warnings"):
+        raise HTTPException(status_code=400, detail="辩论未完成，无法执行")
+
+    # 异步执行
+    import asyncio
+    asyncio.create_task(run_code_generation(debate_id))
+
+    return {"id": debate_id, "status": "executing", "message": "代码生成已启动"}
 
 
 @app.websocket("/ws/debate/{debate_id}")
@@ -264,6 +297,45 @@ async def broadcast_message(debate_id: str, message: dict):
                     "data": message,
                 })
             except Exception:
+                disconnected.append(ws)
+
+
+async def run_code_generation(debate_id: str):
+    """后台运行代码生成"""
+    task = debates[debate_id]
+    task.status = "executing"
+    await broadcast_message(debate_id, {"type": "execution_started"})
+
+    try:
+        from executor.code_generator import CodeGenerator
+
+        model_config = {
+            "api_key": os.environ.get("DEEPSEEK_API_KEY", ""),
+            "base_url": "https://api.deepseek.com",
+            "model": "deepseek-chat",
+        }
+
+        plan_path = "./workspace/final_plan.md"
+        workspace = "./workspace"
+
+        generator = CodeGenerator(workspace, model_config)
+        result = generator.execute_plan(plan_path)
+
+        task.execution_result = result
+        task.status = "executed" if result.get("success") else "execution_failed"
+
+        await broadcast_message(debate_id, {
+            "type": "execution_completed",
+            "result": result,
+        })
+
+    except Exception as e:
+        task.status = "execution_failed"
+        task.execution_error = str(e)
+        await broadcast_message(debate_id, {
+            "type": "execution_failed",
+            "error": str(e),
+        })
                 disconnected.append(ws)
         # 清理断开的连接
         for ws in disconnected:

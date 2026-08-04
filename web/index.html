@@ -152,6 +152,9 @@
         <!-- 结果面板 -->
         <div class="card" style="margin-top: 20px;">
             <h2>📄 最终方案</h2>
+            <button class="btn btn-primary" id="executeBtn" onclick="executePlan()" style="margin-bottom: 12px; display: none;">
+                ⚡ 自动执行方案
+            </button>
             <div class="result" id="result">
                 <p style="color: #484f58; text-align: center;">辩论结束后，方案将显示在这里...</p>
             </div>
@@ -269,8 +272,29 @@
                 const res = await fetch(`${API_BASE}/api/debate/${currentDebateId}/result`);
                 const data = await res.json();
                 document.getElementById('result').innerHTML = `<pre>${escapeHtml(data.result)}</pre>`;
+                // 显示执行按钮
+                document.getElementById('executeBtn').style.display = 'inline-block';
             } catch (e) {
                 console.error('Load result error:', e);
+            }
+        }
+
+        async function executePlan() {
+            if (!currentDebateId) return;
+            const btn = document.getElementById('executeBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ 执行中...';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/debate/${currentDebateId}/execute`, {
+                    method: 'POST',
+                });
+                const data = await res.json();
+                alert(data.message || '执行已启动');
+            } catch (e) {
+                alert('执行失败: ' + e.message);
+                btn.disabled = false;
+                btn.textContent = '⚡ 自动执行方案';
             }
         }
     </script>
