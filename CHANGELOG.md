@@ -4,22 +4,21 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [v0.4.0] - 2026-08-04
+
+### Added
+- **WebSocket 实时推送** (`/ws/debate/{id}`) — 无需轮询，服务端主动推送
+- **全局统计端点** (`/api/stats`) — 追踪辩论数、消息数、Token 消耗
+- **辩论历史列表** — 查看所有过往辩论及其状态
+- **Web UI 升级** — 改用 WebSocket，实时显示消息流
+
 ## [v0.3.0] - 2026-08-04
 
 ### Added
-- **API Gateway**：FastAPI REST API 接口
-- **Docker 部署**：Dockerfile + docker-compose.yml
-- **Web UI**：实时监控辩论过程
-- **异步任务**：后台运行辩论，API 实时查询进度
-
-### API 端点
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | /api/debate/start | 启动辩论 |
-| GET | /api/debate/{id} | 查询状态 |
-| GET | /api/debate/{id}/messages | 消息流 |
-| GET | /api/debate/{id}/result | 获取结果 |
-| POST | /api/debate/{id}/stop | 停止辩论 |
+- **API Gateway** (FastAPI + REST API)
+- **Docker 部署** (Dockerfile + docker-compose.yml)
+- **Web UI** (实时监控界面)
+- **异步任务处理** (线程隔离)
 
 ## [v0.2.0] - 2026-08-03
 
