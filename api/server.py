@@ -6,8 +6,15 @@ MACF API Gateway - REST API 接口
 
 import asyncio
 import uuid
+import os
 from datetime import datetime
 from typing import Optional
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 加载 .env 文件
+load_dotenv(Path(__file__).parent.parent / ".env")
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -184,11 +191,12 @@ async def run_debate_task(debate_id: str, config: DebateConfig):
     try:
         # 导入 MACF 核心
         import sys
-        sys.path.insert(0, "..")
-        from macf.orchestrator import DebateOrchestrator
-        from macf.protocol import MessageType
-        import yaml
         import os
+        # 添加项目根目录到 path
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from macf.orchestrator import DebateOrchestrator
+        from macf.protocol import Message, MessageType
+        import yaml
 
         # 构建配置
         yaml_config = {
@@ -259,6 +267,7 @@ async def run_debate_task(debate_id: str, config: DebateConfig):
         task.status = "failed"
         task.error = str(e)
         import traceback
+        task.error_detail = traceback.format_exc()
         traceback.print_exc()
 
     finally:
