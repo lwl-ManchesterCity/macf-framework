@@ -7,6 +7,8 @@
 
 > 让多个 LLM 像真实团队一样协作：辩论、评审、达成共识，输出可执行的技术方案。
 
+![MACF Demo](demo/macf_demo.gif)
+
 [English](#english) | [中文](#中文)
 
 ### 📚 文档
